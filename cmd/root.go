@@ -31,9 +31,9 @@ compatible with Prometheus for monitoring and alerting.`,
 
 		address := fmt.Sprintf("%s:%d", cfg.MikrotikDevice.Address, cfg.MikrotikDevice.Port)
 
-		authAdapter := adapters.NewMikrotikAuthAdapter(5 * time.Second)
+		mikrotikAuthenticator := adapters.NewMikrotikAuthenticator(5 * time.Second)
 
-		client, err := authAdapter.Authenticate(
+		client, err := mikrotikAuthenticator.Authenticate(
 			context.Background(),
 			address,
 			cfg.MikrotikDevice.Username,
@@ -46,14 +46,13 @@ compatible with Prometheus for monitoring and alerting.`,
 		}
 		defer client.Close()
 
-		reply, err := client.RunCommand("/system/identity/print")
+		identify, err := client.GetSystemIdentity()
 		if err != nil {
-			log.Fatalf("Failed to execute command: %v", err)
+			log.Fatal(err)
+			return
 		}
 
-		for _, re := range reply.Re {
-			fmt.Println("MikroTik Identity:", re.Map["name"])
-		}
+		fmt.Println("Mikrotik System Identify: " + identify)
 	},
 }
 

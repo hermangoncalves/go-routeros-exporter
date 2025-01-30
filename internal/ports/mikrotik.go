@@ -7,10 +7,16 @@ import (
 )
 
 type MikrotikClient interface {
-	RunCommand(command string, args ...string) (*routeros.Reply, error)
+	RunCommand(ctx context.Context, command string, args ...string) (*routeros.Reply, error)
+	GetSystemIdentity() (string, error)
 	Close() error
 }
 
-type AuthenticationPort interface {
-	Authenticate(ctx context.Context, username, password string) (MikrotikClient, error)
+type RouterosClient interface {
+	RunArgs(args []string) (*routeros.Reply, error)
+	Close() error
+}
+
+type MikrotikAuthenticator interface {
+	Authenticate(ctx context.Context, address, username, password string) (MikrotikClient, error)
 }

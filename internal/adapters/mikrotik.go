@@ -17,20 +17,20 @@ var (
 )
 
 type MikrotikClientAdapter struct {
-	Client *routeros.Client
+	Client ports.RouterosClient
 }
 
 type MikrotikAuthAdapter struct {
 	timeout time.Duration
 }
 
-func NewMikrotikAuthAdapter(timeout time.Duration) *MikrotikAuthAdapter {
+func NewMikrotikAuthenticator(timeout time.Duration) ports.MikrotikAuthenticator {
 	return &MikrotikAuthAdapter{
 		timeout: timeout,
 	}
 }
 
-func (m *MikrotikAuthAdapter) Authenticate(ctx context.Context, address, username, password string) (ports.MikrotikClient, error) {
+func (m *MikrotikAuthAdapter) Authenticate(ctx context.Context, address, username, password string) (client ports.MikrotikClient, err error) {
 	// Created a new context with the specified timeout
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel() // Ensure the context is canceled to release resources
@@ -44,14 +44,25 @@ func (m *MikrotikAuthAdapter) Authenticate(ctx context.Context, address, usernam
 
 	go func() {
 		client, err := routeros.DialContext(ctx, address, username, password)
-		ch <- result{client, err}
+
+		// Avoid sending if the context is already canceled
+		select {
+		case ch <- result{client, err}:
+		case <-ctx.Done(): // Exit goroutine if context is canceled
+			if client != nil {
+				client.Close() // Cleanup to prevent resource leak
+			}
+		}
 	}()
 
 	// wait for either the connection attempt or the context to timeout
 	select {
 	case res := <-ch:
 		if res.err != nil {
-			return nil, fmt.Errorf("authentication to Mikrotik Device: %w", res.err)
+			return nil, fmt.Errorf("%w: %w", ErrInvalidCredentials, res.err)
+		}
+		if res.client == nil {
+			return nil, fmt.Errorf("%w: client is nil", ErrDeviceUnreachable)
 		}
 
 		return &MikrotikClientAdapter{res.client}, nil
@@ -62,8 +73,26 @@ func (m *MikrotikAuthAdapter) Authenticate(ctx context.Context, address, usernam
 	}
 }
 
-func (m *MikrotikClientAdapter) RunCommand(command string, args ...string) (*routeros.Reply, error) {
+func (m *MikrotikClientAdapter) RunCommand(ctx context.Context, command string, args ...string) (*routeros.Reply, error) {
 	return m.Client.RunArgs(append([]string{command}, args...))
+}
+
+func (m *MikrotikClientAdapter) GetSystemIdentity() (string, error) {
+	reply, err := m.RunCommand(context.Background(), "/system/identity/print")
+	if err != nil {
+		return "", fmt.Errorf("failed to get system identity: %w", err)
+	}
+
+	if len(reply.Re) == 0 {
+		return "", errors.New("failed to get system identity")
+	}
+
+	identify, exists := reply.Re[0].Map["name"]
+	if !exists {
+		return "", fmt.Errorf("missing 'name' field in response")
+	}
+
+	return identify, nil
 }
 
 func (m *MikrotikClientAdapter) Close() error {
