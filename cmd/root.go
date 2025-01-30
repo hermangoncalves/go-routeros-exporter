@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/hermangoncalves/go-routeros-exporter/internal/adapters"
 	"github.com/hermangoncalves/go-routeros-exporter/internal/config"
@@ -30,10 +31,11 @@ compatible with Prometheus for monitoring and alerting.`,
 
 		address := fmt.Sprintf("%s:%d", cfg.MikrotikDevice.Address, cfg.MikrotikDevice.Port)
 
-		authAdapter := adapters.NewMikrotikAuthAdapter(address)
+		authAdapter := adapters.NewMikrotikAuthAdapter(5 * time.Second)
 
 		client, err := authAdapter.Authenticate(
 			context.Background(),
+			address,
 			cfg.MikrotikDevice.Username,
 			cfg.MikrotikDevice.Password,
 		)
