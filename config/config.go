@@ -1,27 +1,28 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"log"
+	"os"
+	"strconv"
 
-type Config struct {
-	MikrotikDevice MikrotikDevice
-}
+	"github.com/hermangoncalves/go-routeros-exporter/core/domain"
+	"github.com/joho/godotenv"
+)
 
-type MikrotikDevice struct {
-	Name     string
-	Address  string
-	Username string
-	Password string
-	Port     int
-}
+var MikrotikDevice *domain.MikrotikDevice
 
-func LoadConfig() *Config {
-	return &Config{
-		MikrotikDevice: MikrotikDevice{
-			Name: viper.GetString("device_name"),
-			Address: viper.GetString("address"),
-			Username: viper.GetString("username"),
-			Password: viper.GetString("password"),
-			Port: viper.GetInt("port"),
-		},
+func Load() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	port, _ := strconv.Atoi(os.Getenv("MIKROTIK_PORT"))
+	MikrotikDevice = &domain.MikrotikDevice{
+		Name:     os.Getenv("MIKROTIK_DEVICE_NAME"),
+		Host:     os.Getenv("MIKROTIK_HOST"),
+		Port:     port,
+		Username: os.Getenv("MIKROTIK_USER"),
+		Password: os.Getenv("MIKROTIK_PASSWORD"),
 	}
 }
