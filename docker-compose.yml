@@ -1,0 +1,40 @@
+services:
+  # Serviço para o projeto Go
+  mikrotik-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - MIKROTIK_HOST=192.168.88.1:8728
+      - MIKROTIK_USER=admin
+      - MIKROTIK_PASSWORD=password
+
+  # Serviço para o Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  # Serviço para o Grafana
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      
+    restart: unless-stopped
+
+# Volumes para persistir dados do Grafana
+volumes:
+  grafana-data:
+    driver: local
+  prometheus-data:
+    driver: local

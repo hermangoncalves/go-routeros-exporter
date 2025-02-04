@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
-	"github.com/hermangoncalves/go-routeros-exporter/internal/adapters"
-	"github.com/hermangoncalves/go-routeros-exporter/internal/config"
+	"github.com/hermangoncalves/go-routeros-exporter/adapters/mikrotik"
+	"github.com/hermangoncalves/go-routeros-exporter/adapters/prometheus"
+	"github.com/hermangoncalves/go-routeros-exporter/core/service"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,32 +29,35 @@ var rootCmd = &cobra.Command{
 It collects network metrics such as bandwidth usage, device status, and connected clients, exposing them in a format 
 compatible with Prometheus for monitoring and alerting.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg := config.LoadConfig()
-
-		address := fmt.Sprintf("%s:%d", cfg.MikrotikDevice.Address, cfg.MikrotikDevice.Port)
-
-		mikrotikAuthenticator := adapters.NewMikrotikAuthenticator(5 * time.Second)
-
-		client, err := mikrotikAuthenticator.Authenticate(
+		mikrotikClient, err := mikrotik.NewMikrotikClient(
 			context.Background(),
-			address,
-			cfg.MikrotikDevice.Username,
-			cfg.MikrotikDevice.Password,
+			"192.168.13.1:8728",
+			"admin",
+			"passwd",
 		)
 
 		if err != nil {
-			fmt.Printf("Authentication failed: %v\n", err)
-			return
-		}
-		defer client.Close()
-
-		identify, err := client.GetSystemIdentity()
-		if err != nil {
-			log.Fatal(err)
-			return
+			panic(err)
 		}
 
-		fmt.Println("Mikrotik System Identify: " + identify)
+		metricsService := service.NewNetricsService(mikrotikClient)
+		metricsHandler := prometheus.NewMetricsHandler(metricsService)
+
+		// Start a goroutine to update metrics periodically
+		go func() {
+			for {
+				if err := metricsHandler.UpdateMetrics(); err != nil {
+					log.Printf("Failed to update metrics: %v", err)
+				}
+				time.Sleep(15 * time.Second)
+			}
+		}()
+
+		// Expose metrics endpoint
+		port := ":8080"
+		http.Handle("/metrics", metricsHandler)
+		log.Println("Starting server on " + port)
+		log.Fatal(http.ListenAndServe(port, nil))
 	},
 }
 
