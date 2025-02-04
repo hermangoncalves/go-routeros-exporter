@@ -1,7 +1,6 @@
 package prometheus
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"github.com/hermangoncalves/go-routeros-exporter/ports"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -28,18 +28,6 @@ var (
 		[]string{"interface"},
 	)
 
-	// cpuUsage = prometheus.NewGauge(
-	// 	prometheus.GaugeOpts{
-	// 		Name: "mikrotik_cpu_usage",
-	// 		Help: "CPU usage percentage",
-	// 	},
-	// )
-	// memoryUsage = prometheus.NewGauge(
-	// 	prometheus.GaugeOpts{
-	// 		Name: "mikrotik_memory_usage",
-	// 		Help: "Memory usage percentage",
-	// 	},
-	// )
 	systemMetrics = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mikrotik_system_metrics",
@@ -56,28 +44,37 @@ func init() {
 
 type MetricsHandler struct {
 	metricsService ports.MetricsService
+	logger         *logrus.Logger
 }
 
-func NewMetricsHandler(metricsService ports.MetricsService) *MetricsHandler {
-	return &MetricsHandler{metricsService: metricsService}
+func NewMetricsHandler(metricsService ports.MetricsService, logger *logrus.Logger) *MetricsHandler {
+	return &MetricsHandler{
+		metricsService: metricsService,
+		logger:         logger,
+	}
 }
 
 func (h *MetricsHandler) UpdateMetrics() error {
 	metrics, err := h.metricsService.CollectMetrics()
 	if err != nil {
+		h.logger.WithError(err).Error("Failed to collect metrics")
 		return err
 	}
-
-	log.Println(metrics.InterfaceTraffic)
 
 	for iface, traffic := range metrics.InterfaceTraffic {
 		rxBytes, err := strconv.ParseFloat(strings.TrimSpace(traffic.RxBytes), 64)
 		if err != nil {
-			log.Printf("failed to convert RxBytes: %v", err)
+			h.logger.WithFields(logrus.Fields{
+				"interface": iface,
+				"rx_bytes":  traffic.RxBytes,
+			}).Error("Failed to convert RxBytes")
 		}
 		txBytes, err := strconv.ParseFloat(strings.TrimSpace(traffic.TxBytes), 64)
 		if err != nil {
-			log.Printf("failed to convert TxBytes: %v", err)
+			h.logger.WithFields(logrus.Fields{
+				"interface": iface,
+				"tx_bytes":  traffic.TxBytes,
+			}).Error("Failed to convert TxBytes")
 		}
 		interfaceRxBytes.WithLabelValues(iface).Set(float64(rxBytes))
 		interfaceTxBytes.WithLabelValues(iface).Set(float64(txBytes))
@@ -85,12 +82,12 @@ func (h *MetricsHandler) UpdateMetrics() error {
 
 	CPUUsage, err := strconv.ParseFloat(strings.TrimSpace(metrics.CPUUsage), 64)
 	if err != nil {
-		log.Printf("failed to convert CPUUsage: %v", err)
+		h.logger.WithError(err).Error("Failed to convert CPUUsage")
 	}
 
 	MemoryUsage, err := strconv.ParseFloat(strings.TrimSpace(metrics.MemoryUsage), 64)
 	if err != nil {
-		log.Printf("failed to convert CPUUsage: %v", err)
+		h.logger.WithError(err).Error("Failed to convert MemoryUsage")
 	}
 
 	systemMetrics.WithLabelValues("cpu").Set(CPUUsage)
@@ -103,9 +100,9 @@ var promHandler = promhttp.Handler()
 
 func (h *MetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := h.UpdateMetrics(); err != nil {
+		h.logger.WithError(err).Error("Failed to update metrics before serving HTTP request")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	promHandler.ServeHTTP(w, r)
 }

@@ -6,6 +6,7 @@ require (
 	github.com/go-routeros/routeros/v3 v3.0.0
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.20.5
+	github.com/sirupsen/logrus v1.9.3
 )
 
 require (

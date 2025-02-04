@@ -1,8 +1,6 @@
 package service
 
 import (
-	"log"
-
 	"github.com/hermangoncalves/go-routeros-exporter/core/domain"
 	"github.com/hermangoncalves/go-routeros-exporter/ports"
 )
@@ -21,15 +19,10 @@ func (s *metricsService) CollectMetrics() (*domain.Metrics, error) {
 		return nil, err
 	}
 
-	log.Println(interfaceTraffic["ether1"])
-
 	cpuUsage, memoryUsage, err := s.mikrotikClient.GetSystemResources()
 	if err != nil {
 		return nil, err
 	}
-
-	log.Println("CPU Usage: " + cpuUsage)
-	log.Println("Memory Usage: " + memoryUsage)
 
 	return &domain.Metrics{
 		InterfaceTraffic: interfaceTraffic,

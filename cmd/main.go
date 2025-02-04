@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -14,14 +13,19 @@ import (
 	"github.com/hermangoncalves/go-routeros-exporter/adapters/prometheus"
 	"github.com/hermangoncalves/go-routeros-exporter/config"
 	"github.com/hermangoncalves/go-routeros-exporter/core/service"
+	"github.com/sirupsen/logrus"
+)
+
+var (
+	logger *logrus.Logger
 )
 
 func init() {
 	config.Load()
+	logger = config.NewLogger()
 }
 
 func main() {
-
 	mikrotikClient, err := mikrotik.NewMikrotikClient(
 		context.Background(),
 		fmt.Sprintf("%s:%d", config.MikrotikDevice.Host, config.MikrotikDevice.Port),
@@ -30,17 +34,25 @@ func main() {
 	)
 
 	if err != nil {
-		panic(err)
+		logger.WithFields(logrus.Fields{
+			"host":     config.MikrotikDevice.Host,
+			"port":     config.MikrotikDevice.Port,
+			"username": config.MikrotikDevice.Username,
+		}).Fatalf("Failed to connect to Mikrotik device: %v", err)
 	}
 
+	logger.Info("Successfully connected to Mikrotik device")
+
 	metricsService := service.NewNetricsService(mikrotikClient)
-	metricsHandler := prometheus.NewMetricsHandler(metricsService)
+	metricsHandler := prometheus.NewMetricsHandler(metricsService, logger)
 
 	// Start a goroutine to update metrics periodically
 	go func() {
 		for {
 			if err := metricsHandler.UpdateMetrics(); err != nil {
-				log.Printf("Failed to update metrics: %v", err)
+				logger.WithError(err).Error("Failed to update metrics")
+			} else {
+				logger.Info("Metrics updated successfully")
 			}
 			time.Sleep(15 * time.Second)
 		}
@@ -48,7 +60,9 @@ func main() {
 
 	// Expose metrics endpoint
 	port := ":8080"
+	logger.Infof("Starting server on port %s", port)
 	http.Handle("/metrics", metricsHandler)
-	log.Println("Starting server on " + port)
-	log.Fatal(http.ListenAndServe(port, nil))
+	if err := http.ListenAndServe(port, nil); err != nil {
+		logger.WithError(err).Fatal("Failed to start server")
+	}
 }
