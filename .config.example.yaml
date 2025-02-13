@@ -1,0 +1,18 @@
+devices:
+  - name: device-1
+    host: 192.168.13.1
+    port: 8728
+    username: admin
+    password: pa your-passwordssword
+  - name: Netsync
+    host: 192.168.88.1
+    port: 8728
+    username: admin
+    password: your-password
+  - name: Spnet
+    host: 192.168.88.1
+    port: 8728
+    username: admin
+    password: your-password
+collect_interval: 30s
+listen_address: ":9283"
