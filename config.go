@@ -8,12 +8,12 @@ import (
 )
 
 type AppConfig struct {
-	Devices         []DeviceConfig `yaml:"devices"`          // List of MikroTik devices
+	Devices         []Device `yaml:"devices"`          // List of MikroTik devices
 	CollectInterval string         `yaml:"collect_interval"` // How often to collect metrics (e.g., "30s")
 	ListenAddress   string         `yaml:"listen_address"`   // Address to expose Prometheus metrics (e.g., ":9283")
 }
 
-type DeviceConfig struct {
+type Device struct {
 	Name     string `yaml:"name"`     // Friendly name for the device
 	Host     string `yaml:"host"`     // IP or hostname of the MikroTik device
 	Port     int    `yaml:"port"`     // API port (default: 8728)

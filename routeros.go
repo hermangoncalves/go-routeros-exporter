@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/go-routeros/routeros/v3"
@@ -49,5 +50,37 @@ func NewRouterosClient(address, username, password string) (*RouterosClient, err
 	case <-ctx.Done():
 		// Handle context cancellation or timeout
 		return nil, fmt.Errorf("%s: %v", "Network Timeout", ctx.Err())
+	}
+}
+
+func (r *RouterosClient) Close() {
+	if r.Client != nil {
+		r.Client.Close()
+	}
+}
+
+func fetchMetrics(client *routeros.Client) {
+	resp, err := client.Run("/interface/print", "=.proplist=name,tx-byte")
+	if err != nil {
+		log.Printf("Failed to fetch interface metrics: %v", err)
+		return
+	}
+
+	for _, re := range resp.Re {
+		name := re.Map["name"]
+		txBytes.WithLabelValues(name).Set(parseFloat(re.Map["tx-byte"]))
+	}
+}
+
+func parseFloat(value string) float64 {
+	var result float64
+	fmt.Sscanf(value, "%f", &result)
+	return result
+}
+
+func startMetricsCollection(client *routeros.Client, interval time.Duration) {
+	for {
+		fetchMetrics(client)
+		time.Sleep(interval)
 	}
 }

@@ -4,25 +4,29 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var deviceIndex *int
+var (
+	mikrotikDevices []Device
+	selectedDevice  *Device
+	txBytes         = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mikrotik_interface_tx_bytes",
+			Help: "Transmitted bytes on MikroTik interfaces",
+		},
+		[]string{"interface"},
+	)
+)
 
 type model struct {
 	choices  []string
 	cursor   int
-	selected map[int]struct{}
-}
-
-func initialModel(choices []string) model {
-	return model{
-		choices:  choices,
-		selected: make(map[int]struct{}),
-	}
+	selected int
 }
 
 func (m model) Init() tea.Cmd {
@@ -45,13 +49,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 		case "enter", " ":
-			deviceIndex = &m.cursor
-			_, ok := m.selected[m.cursor]
-			if ok {
-				delete(m.selected, m.cursor)
-			} else {
-				m.selected[m.cursor] = struct{}{}
-			}
+			m.selected = m.cursor
+			selectedDevice = &mikrotikDevices[m.selected]
 			return m, tea.Quit
 		}
 	}
@@ -59,83 +58,61 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	s := "What should we buy at the market?\n\n"
-
+	s := "Select a MikroTik device:\n\n"
 	for i, choice := range m.choices {
-
 		cursor := " "
 		if m.cursor == i {
 			cursor = ">"
 		}
-
-		checked := " "
-		if _, ok := m.selected[i]; ok {
-			checked = "x"
-		}
-
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+		s += fmt.Sprintf("%s %s\n", cursor, choice)
 	}
-
 	s += "\nPress q to quit.\n"
-
 	return s
 }
 
 func main() {
-	cfg, err := LoadConfig("config.yaml")
+	cfg, err := LoadConfig(".config.yaml")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	var choices []string
+	mikrotikDevices = cfg.Devices
 
-	for _, device := range cfg.Devices {
-		choices = append(choices, fmt.Sprintf("%s - %s", device.Name, device.Host))
+	choices := make([]string, len(cfg.Devices))
+	for index, device := range cfg.Devices {
+		choices[index] = fmt.Sprintf("%s - %s", device.Name, device.Host)
 	}
-
-	p := tea.NewProgram(initialModel(choices))
+	p := tea.NewProgram(model{choices: choices})
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
-		os.Exit(1)
+		log.Fatalf("Error running Bubble Tea program: %v", err)
 	}
 
-	if deviceIndex == nil {
+	if selectedDevice == nil {
 		log.Fatal("No device selected")
 	}
 
-	device := cfg.Devices[*deviceIndex]
-	log.Println("Connecting to the device...")
-	routerosClient, err := NewRouterosClient(
-		fmt.Sprintf("%s:%d", device.Host, device.Port),
-		device.Username,
-		device.Password,
+	fmt.Println("Connecting to Mikrotik device...")
+
+	client, err := NewRouterosClient(
+		fmt.Sprintf("%s:%d", selectedDevice.Host, selectedDevice.Port),
+		selectedDevice.Username,
+		selectedDevice.Password,
 	)
 	if err != nil {
-		log.Fatalf("failed to create new client: %v", err)
+		log.Fatalf("Failed to connect to MikroTik: %v", err)
 	}
+	defer client.Close()
 
-  RunCommand()
-  
-	startServer(cfg.ListenAddress)
-
-}
-
-func startServer(addr string) {
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
+	go startMetricsCollection(client.Client, 30*time.Second)
 
 	http.Handle("/metrics", promhttp.Handler())
-	log.Printf("Exporter running on http://localhost%s/metrics\n", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Println("MikroTik Prometheus Exporter running on :9000")
+	log.Fatal(http.ListenAndServe(":9000", nil))
+
 }
 
-
-func RunCommand() {
-reply, err := routerosClient.Run("/system/resources/print")
-  if err != nil {
-    log.Fatalf("failed to run command: %v", err)
-  }
-  
-fmt.Println(reply.Re)
+func init() {
+	prometheus.MustRegister(
+		txBytes,
+	)
 }
